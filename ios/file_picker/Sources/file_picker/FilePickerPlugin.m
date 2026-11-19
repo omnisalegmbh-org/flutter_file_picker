@@ -4,13 +4,7 @@
 #import "ImageUtils.h"
 #import <Flutter/Flutter.h>
 
-#ifdef PICKER_MEDIA
-@import DKImagePickerController;
-
-@interface FilePickerPlugin() <DKImageAssetExporterObserver>
-#else
 @interface FilePickerPlugin()
-#endif
 @property (nonatomic) FlutterResult result;
 @property (nonatomic) FlutterEventSink eventSink;
 #ifdef PICKER_MEDIA
@@ -253,12 +247,12 @@
         return;
     }
 #endif
-    
-    if(multiPick) {
-        [self resolveMultiPickFromGallery:type withCompressionAllowed:allowCompression];
-        return;
-    }
-    
+
+    // Unreachable since the deployment target is iOS 14: PHPicker above always
+    // returns. The multi-pick fallback through DKImagePickerController is gone
+    // with that dependency — under Swift Package Manager it linked DKCamera,
+    // whose camera and location APIs make App Store Connect demand purpose
+    // strings from apps that never use either.
     NSArray<NSString*> * videoTypes = @[(NSString*)kUTTypeMovie, (NSString*)kUTTypeAVIMovie, (NSString*)kUTTypeVideo, (NSString*)kUTTypeMPEG4];
     NSArray<NSString*> * imageTypes = @[(NSString *)kUTTypeImage];
     
@@ -288,80 +282,6 @@
     
 }
 
-- (void) resolveMultiPickFromGallery:(MediaType)type withCompressionAllowed:(BOOL)allowCompression {
-    DKImagePickerController * dkImagePickerController = [[DKImagePickerController alloc] init];
-    
-    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"" message:@"" preferredStyle:UIAlertControllerStyleAlert];
-    UIActivityIndicatorView* indicator = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleWhite];
-    
-    UIViewController *currentViewController = [self viewControllerWithWindow:nil];
-    if(_eventSink == nil) {
-        // Create alert dialog for asset caching
-        [alert.view setCenter: currentViewController.view.center];
-        [alert.view addConstraint: [NSLayoutConstraint constraintWithItem:alert.view attribute:NSLayoutAttributeHeight relatedBy:NSLayoutRelationEqual toItem:nil attribute:NSLayoutAttributeNotAnAttribute multiplier:1 constant:100]];
-        
-        // Create a default loader if user don't provide a status handler
-        indicator.hidesWhenStopped = YES;
-        [indicator setCenter: alert.view.center];
-        indicator.autoresizingMask = (UIViewAutoresizingFlexibleRightMargin | UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleBottomMargin | UIViewAutoresizingFlexibleTopMargin);
-        [alert.view addSubview: indicator];
-    }
-    
-    DKImageAssetExporterConfiguration * exportConfiguration = [[DKImageAssetExporterConfiguration alloc] init];
-    exportConfiguration.imageExportPreset = allowCompression ? DKImageExportPresentCompatible : DKImageExportPresentCurrent;
-    exportConfiguration.videoExportPreset = allowCompression ? AVAssetExportPresetHighestQuality : AVAssetExportPresetPassthrough;
-    dkImagePickerController.exporter = [dkImagePickerController.exporter initWithConfiguration:exportConfiguration];
-    
-    dkImagePickerController.exportsWhenCompleted = YES;
-    dkImagePickerController.showsCancelButton = YES;
-    dkImagePickerController.sourceType = DKImagePickerControllerSourceTypePhoto;
-    dkImagePickerController.assetType = type == VIDEO ? DKImagePickerControllerAssetTypeAllVideos : type == IMAGE ? DKImagePickerControllerAssetTypeAllPhotos : DKImagePickerControllerAssetTypeAllAssets;
-    
-    // Export status changed
-    [dkImagePickerController setExportStatusChanged:^(enum DKImagePickerControllerExportStatus status) {
-        
-        if(status == DKImagePickerControllerExportStatusExporting && dkImagePickerController.selectedAssets.count > 0){
-            Log("Exporting assets, this operation may take a while if remote (iCloud) assets are being cached.");
-            
-            if(self->_eventSink != nil){
-                self->_eventSink([NSNumber numberWithBool:YES]);
-            } else {
-                [indicator startAnimating];
-                [currentViewController showViewController:alert sender:nil];
-            }
-            
-        } else {
-            if(self->_eventSink != nil) {
-                self->_eventSink([NSNumber numberWithBool:NO]);
-            } else {
-                [indicator stopAnimating];
-                [alert dismissViewControllerAnimated:YES completion:nil];
-            }
-            
-        }
-    }];
-    
-    // Did cancel
-    [dkImagePickerController setDidCancel:^(){
-        self->_result(nil);
-        self->_result = nil;
-    }];
-    
-    // Did select
-    [dkImagePickerController setDidSelectAssets:^(NSArray<DKAsset*> * __nonnull DKAssets) {
-        NSMutableArray<NSURL*>* paths = [[NSMutableArray<NSURL*> alloc] init];
-        
-        for(DKAsset * asset in DKAssets) {
-            if(asset.localTemporaryPath.absoluteURL != nil) {
-                [paths addObject:asset.localTemporaryPath.absoluteURL];
-            }
-        }
-        
-        [self handleResult: paths];
-    }];
-    
-    [[self viewControllerWithWindow:nil] presentViewController:dkImagePickerController animated:YES completion:nil];
-}
 #endif // PICKER_MEDIA
 
 #ifdef PICKER_AUDIO
